@@ -1,0 +1,607 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Modular Shelf Configurator</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#111;--bg2:#1a1a1a;--bg3:#222;--border:#333;--border2:#444;
+  --text:#e8e8e8;--text2:#aaa;--text3:#666;
+  --info:#378ADD;--info-bg:#1a2d42;
+  --success:#4a9f20;--success-bg:#1a2d0a;
+  --warn:#c47a10;--warn-bg:#2d1e00;
+  --danger:#c04040;--radius:8px;--radius-sm:5px;
+}
+body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;padding:1.5rem;min-height:100vh}
+h1{font-size:18px;font-weight:600;margin-bottom:4px}
+.subtitle{font-size:13px;color:var(--text2);margin-bottom:1rem}
+.legend{display:flex;flex-wrap:wrap;gap:12px;margin-bottom:1rem;padding:12px 14px;background:var(--bg2);border-radius:var(--radius);border:1px solid var(--border);font-size:12px;color:var(--text2);align-items:center}
+.leg-item{display:flex;align-items:center;gap:6px}
+.leg-sw{width:26px;height:6px;border-radius:3px;flex-shrink:0}
+.leg-dot{width:10px;height:10px;border-radius:50%;flex-shrink:0}
+.leg-sq{width:10px;height:10px;border-radius:2px;flex-shrink:0}
+.ctrls{display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap;align-items:center}
+.btn{padding:6px 13px;border:1px solid var(--border2);border-radius:var(--radius-sm);background:var(--bg3);color:var(--text2);cursor:pointer;font-size:12px}
+.btn:hover{background:#2a2a2a}
+.btn-danger{color:var(--danger);border-color:#6b2020}
+.btn-primary{color:var(--info);border-color:#1e3d5e}
+.hint{font-size:12px;color:var(--text3);margin-right:auto}
+.gw{border:1px solid var(--border);border-radius:var(--radius);overflow:auto;background:var(--bg2);margin-bottom:1.25rem}
+canvas{display:block;cursor:crosshair}
+.bom{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:1.25rem 1.5rem}
+.bom-title{font-size:15px;font-weight:600;margin-bottom:3px}
+.bom-sub{font-size:12px;color:var(--text3);margin-bottom:14px}
+.bom-tbl{width:100%;border-collapse:collapse;font-size:13px}
+.bom-tbl th{text-align:left;color:var(--text2);font-weight:400;padding:4px 10px 7px 0;border-bottom:1px solid var(--border)}
+.bom-tbl td{padding:6px 10px 6px 0;border-bottom:1px solid var(--border)}
+.bom-tbl tr:last-child td{border-bottom:none}
+.bom-total{font-weight:600;padding-top:10px!important}
+.empty{color:var(--text3);font-size:13px}
+.sizeinfo{font-size:11px;color:var(--text3);margin-left:auto}
+footer{margin-top:1.5rem;font-size:11px;color:var(--text3);text-align:center}
+#tt{position:fixed;background:#2a2a2a;border:1px solid #555;border-radius:5px;padding:5px 9px;font-size:11px;color:var(--text2);pointer-events:none;display:none;z-index:100}
+#picker{position:fixed;background:#1e1e1e;border:1px solid #555;border-radius:10px;padding:10px;display:none;flex-direction:column;gap:6px;z-index:200;min-width:130px}
+#picker .ptitle{font-size:11px;color:var(--text3);text-align:center;margin-bottom:2px}
+#picker .pgrid{display:grid;grid-template-columns:1fr 1fr;gap:5px}
+#picker button.pcorner{width:52px;height:52px;background:var(--bg3);border:1px solid var(--border2);border-radius:6px;cursor:pointer;font-size:20px;color:var(--text2)}
+#picker button.pcorner:hover:not(:disabled){background:#333;border-color:#aaa}
+#picker button.pcorner:disabled{opacity:0.2;cursor:not-allowed}
+#picker .pcancel{width:100%;padding:5px;background:transparent;border:1px solid var(--border2);border-radius:5px;color:var(--text3);cursor:pointer;font-size:11px;margin-top:2px}
+#picker .pcancel:hover{background:var(--bg3)}
+</style>
+</head>
+<body>
+<h1>🗄 Modular Shelf Configurator</h1>
+<p class="subtitle">
+  <b>Edge</b> = set/remove segment &nbsp;·&nbsp;
+  <b>Cell center</b> = attach Diagonal_Brace to adjacent plates &nbsp;·&nbsp;
+  <b>Foot point</b> = cycle foot type
+</p>
+
+<div class="legend">
+  <div class="leg-item"><div class="leg-sw" style="background:#4a9f20"></div>Plate (200mm)</div>
+  <div class="leg-item"><div class="leg-sw" style="background:#2d7a10"></div>Small_Plate (100mm)</div>
+  <div class="leg-item"><div class="leg-dot" style="background:#378ADD"></div>Connector (auto)</div>
+  <div class="leg-item"><div class="leg-sq" style="background:#c47a10"></div>Foot (auto, clickable)</div>
+  <div class="leg-item"><div class="leg-sq" style="background:rgba(200,160,40,0.4);border:1px solid #c89632"></div>Diagonal_Brace (attaches to plate)</div>
+  <span class="sizeinfo" id="sizeinfo"></span>
+</div>
+
+<div class="ctrls">
+  <span class="hint">Cell: choose corner — grey = no plate on that edge, or edge already used by brace</span>
+  <button class="btn btn-danger" onclick="clearAll()">Clear all</button>
+  <button class="btn btn-primary" onclick="exportBOM()">📋 Copy parts list</button>
+</div>
+
+<div class="gw"><canvas id="c"></canvas></div>
+
+<div class="bom">
+  <div class="bom-title">Parts List</div>
+  <div class="bom-sub">Plate = 2 segments without connector between them &nbsp;·&nbsp; Small_Plate = 1 segment or connector between them</div>
+  <div id="bom-content"><span class="empty">No plates set yet.</span></div>
+</div>
+
+<div id="picker">
+  <div class="ptitle">Choose corner</div>
+  <div class="pgrid">
+    <button class="pcorner" id="btn-TL" onclick="placeDiag('TL')" title="Top-Left">↖</button>
+    <button class="pcorner" id="btn-TR" onclick="placeDiag('TR')" title="Top-Right">↗</button>
+    <button class="pcorner" id="btn-BL" onclick="placeDiag('BL')" title="Bottom-Left">↙</button>
+    <button class="pcorner" id="btn-BR" onclick="placeDiag('BR')" title="Bottom-Right">↘</button>
+  </div>
+  <button class="pcancel" onclick="closePicker()">Cancel</button>
+</div>
+
+<div id="tt"></div>
+<footer>1 grid spacing = 100mm &nbsp;·&nbsp; Plate = 200mm &nbsp;·&nbsp; Small_Plate = 100mm &nbsp;·&nbsp; Diagonal_Brace attaches to existing plate</footer>
+
+<script>
+const CELL=72, COLS=20, ROWS=14, HIT_PT=12, HIT_ED=10;
+const OX=CELL/2, OY=CELL/2;
+function px(c){return OX+c*CELL}
+function py(r){return OY+r*CELL}
+function mkGrid(rows,cols,val){return Array.from({length:rows},()=>new Array(cols).fill(val))}
+
+// hEdges[r][c]: 0=empty, 1=segment
+// vEdges[r][c]: 0=empty, 1=segment
+// diagCells[r][c]: null | 'TL'|'TR'|'BL'|'BR'
+// footOvr[r][c]: null|'slim'|'none'
+let hEdges    = mkGrid(ROWS+1, COLS,   0);
+let vEdges    = mkGrid(ROWS,   COLS+1, 0);
+let diagCells = mkGrid(ROWS,   COLS,   null);
+let footOvr   = mkGrid(ROWS+1, COLS+1, null);
+// jointOvr[r][c]: null=T_Connector(default), 'x'=X_Connector  — only for straight-through (joint) points
+let jointOvr  = mkGrid(ROWS+1, COLS+1, null);
+
+const canvas=document.getElementById('c');
+canvas.width=COLS*CELL+CELL;
+canvas.height=ROWS*CELL+CELL;
+const ctx=canvas.getContext('2d');
+
+// ─── Brace logic ──────────────────────────────────────────────────────────────
+// A brace in cell (r,c) at corner pos uses 2 edges:
+//   TL: top (hEdge r,c)   + left  (vEdge r,c)
+//   TR: top (hEdge r,c)   + right (vEdge r,c+1)
+//   BL: bot (hEdge r+1,c) + left  (vEdge r,c)
+//   BR: bot (hEdge r+1,c) + right (vEdge r,c+1)
+function braceEdgeDefs(r,c,pos){
+  switch(pos){
+    case 'TL': return [{axis:'h',r,c},      {axis:'v',r,c}    ];
+    case 'TR': return [{axis:'h',r,c},      {axis:'v',r,c:c+1}];
+    case 'BL': return [{axis:'h',r:r+1,c},  {axis:'v',r,c}    ];
+    case 'BR': return [{axis:'h',r:r+1,c},  {axis:'v',r,c:c+1}];
+  }
+}
+
+function edgeVal(axis,r,c){
+  return axis==='h' ? hEdges[r]?.[c] ?? 0 : vEdges[r]?.[c] ?? 0;
+}
+
+// Check if an edge is already used by any brace (returns true if occupied)
+function edgeUsedByBrace(axis, er, ec){
+  // scan all cells and check if any brace uses this edge
+  for(let r=0;r<ROWS;r++){
+    for(let c=0;c<COLS;c++){
+      const pos=diagCells[r][c];
+      if(!pos) continue;
+      for(const e of braceEdgeDefs(r,c,pos)){
+        if(e.axis===axis && e.r===er && e.c===ec) return true;
+      }
+    }
+  }
+  return false;
+}
+
+// For a given cell (r,c) and corner pos, is it available?
+// Rule: BOTH edges must have a plate segment AND neither edge used by another brace
+function cornerAvailable(r,c,pos){
+  const edges = braceEdgeDefs(r,c,pos);
+  for(const e of edges){
+    if(edgeVal(e.axis,e.r,e.c) !== 1) return false;   // no plate here
+    if(edgeUsedByBrace(e.axis,e.r,e.c)) return false; // already has a brace
+  }
+  return true;
+}
+
+// ─── Connector logic ──────────────────────────────────────────────────────────
+function edgesAt(r,c){
+  return {
+    up:    r>0    && vEdges[r-1]?.[c]===1,
+    down:  r<ROWS && vEdges[r]?.[c]===1,
+    left:  c>0    && hEdges[r]?.[c-1]===1,
+    right: c<COLS && hEdges[r]?.[c]===1,
+  };
+}
+function countAt(r,c){
+  const e=edgesAt(r,c);
+  return (e.up?1:0)+(e.down?1:0)+(e.left?1:0)+(e.right?1:0);
+}
+// plateJoints: Set of 'r,c' strings for points that are at a plate boundary (between two plates)
+// Recomputed whenever edges change via recomputePlateJoints()
+let plateJoints = new Set();
+
+function recomputePlateJoints(){
+  plateJoints.clear();
+  // Horizontal runs
+  for(let r=0;r<=ROWS;r++){
+    let run=[];
+    for(let c=0;c<=COLS;c++){
+      if(c<COLS&&hEdges[r][c]===1){run.push(c);continue;}
+      // pair up: each pair of 2 = one Plate, boundary is between pair[i+1] and pair[i+2]
+      let i=0;
+      while(i+1<run.length){
+        // The interior point of this plate pair is run[i]+1
+        // The boundary between this plate and the next is run[i+1]+1
+        const boundaryC = run[i+1]+1;
+        if(i+2<run.length) plateJoints.add(r+','+boundaryC);
+        i+=2;
+      }
+      run=[];
+    }
+  }
+  // Vertical runs
+  for(let c=0;c<=COLS;c++){
+    let run=[];
+    for(let r=0;r<=ROWS;r++){
+      if(r<ROWS&&vEdges[r][c]===1){run.push(r);continue;}
+      let i=0;
+      while(i+1<run.length){
+        const boundaryR = run[i+1]+1;
+        if(i+2<run.length) plateJoints.add(boundaryR+','+c);
+        i+=2;
+      }
+      run=[];
+    }
+  }
+}
+
+function connectorAt(r,c){
+  const n=countAt(r,c); if(n===0) return null;
+  const e=edgesAt(r,c);
+  if(n===4) return 'X_Connector';
+  if(n===3) return 'T_Connector';
+  if(n===2){
+    const straight=(e.up&&e.down)||(e.left&&e.right);
+    if(straight){
+      // Only a connector if this is a plate boundary point
+      if(plateJoints.has(r+','+c)){
+        return jointOvr[r][c]==='x' ? 'X_Connector' : 'T_Connector';
+      }
+      return null; // mid-plate, no connector
+    }
+    return 'L_Connector';
+  }
+  const fo=footOvr[r][c];
+  if(fo==='none') return null;
+  if(fo==='slim') return 'Slim_Foot';
+  return 'Stability_Foot';
+}
+
+// ─── BOM ──────────────────────────────────────────────────────────────────────
+function calcBOM(){
+  recomputePlateJoints();
+  let plates=0,smalls=0,xCon=0,tCon=0,lCon=0,stFoot=0,slFoot=0,diag=0;
+  // H runs
+  for(let r=0;r<=ROWS;r++){
+    let run=[];
+    for(let c=0;c<=COLS;c++){
+      if(c<COLS&&hEdges[r][c]===1){run.push(c);continue;}
+      let i=0;
+      while(i<run.length){
+        if(i+1<run.length&&countAt(r,run[i]+1)===2){plates++;i+=2;}
+        else{smalls++;i++;}
+      }
+      run=[];
+    }
+  }
+  // V runs
+  for(let c=0;c<=COLS;c++){
+    let run=[];
+    for(let r=0;r<=ROWS;r++){
+      if(r<ROWS&&vEdges[r][c]===1){run.push(r);continue;}
+      let i=0;
+      while(i<run.length){
+        if(i+1<run.length&&countAt(run[i]+1,c)===2){plates++;i+=2;}
+        else{smalls++;i++;}
+      }
+      run=[];
+    }
+  }
+  // Points
+  for(let r=0;r<=ROWS;r++) for(let c=0;c<=COLS;c++){
+    const t=connectorAt(r,c); if(!t) continue;
+    if(t==='X_Connector') xCon++;
+    else if(t==='T_Connector') tCon++;
+    else if(t==='L_Connector') lCon++;
+    else if(t==='Stability_Foot') stFoot++;
+    else if(t==='Slim_Foot') slFoot++;
+  }
+  // Braces
+  for(let r=0;r<ROWS;r++) for(let c=0;c<COLS;c++) if(diagCells[r][c]) diag++;
+  return {plates,smalls,xCon,tCon,lCon,stFoot,slFoot,diag};
+}
+
+// ─── Hit detection ────────────────────────────────────────────────────────────
+function nearestTarget(mx,my){
+  for(let r=0;r<=ROWS;r++) for(let c=0;c<=COLS;c++){
+    const dx=mx-px(c),dy=my-py(r);
+    if(dx*dx+dy*dy<HIT_PT*HIT_PT) return {type:'point',r,c};
+  }
+  for(let r=0;r<=ROWS;r++) for(let c=0;c<COLS;c++){
+    const ex=px(c)+CELL/2,ey=py(r);
+    if(Math.abs(mx-ex)<CELL/2-HIT_PT&&Math.abs(my-ey)<HIT_ED) return {type:'hEdge',r,c};
+  }
+  for(let r=0;r<ROWS;r++) for(let c=0;c<=COLS;c++){
+    const ex=px(c),ey=py(r)+CELL/2;
+    if(Math.abs(mx-ex)<HIT_ED&&Math.abs(my-ey)<CELL/2-HIT_PT) return {type:'vEdge',r,c};
+  }
+  for(let r=0;r<ROWS;r++) for(let c=0;c<COLS;c++){
+    const cx=px(c)+CELL/2,cy=py(r)+CELL/2;
+    if(Math.abs(mx-cx)<CELL/2-HIT_PT&&Math.abs(my-cy)<CELL/2-HIT_PT) return {type:'cell',r,c};
+  }
+  return null;
+}
+
+// ─── Picker ───────────────────────────────────────────────────────────────────
+let pendingCell=null;
+
+function showPicker(screenX,screenY,r,c){
+  pendingCell={r,c};
+  const p=document.getElementById('picker');
+  // Update button states
+  ['TL','TR','BL','BR'].forEach(pos=>{
+    const btn=document.getElementById('btn-'+pos);
+    const avail = cornerAvailable(r,c,pos);
+    const alreadyHere = diagCells[r][c]===pos;
+    btn.disabled = !avail && !alreadyHere;
+    btn.style.borderColor = alreadyHere ? '#c89632' : '';
+    btn.style.background  = alreadyHere ? 'rgba(200,160,40,0.2)' : '';
+    // Tooltip on button
+    if(!avail && !alreadyHere){
+      const edges=braceEdgeDefs(r,c,pos);
+      const reasons=edges.map(e=>{
+        if(edgeVal(e.axis,e.r,e.c)!==1) return 'no plate';
+        if(edgeUsedByBrace(e.axis,e.r,e.c)) return 'edge occupied';
+        return '';
+      }).filter(Boolean);
+      btn.title=reasons[0]||'not available';
+    } else {
+      btn.title=alreadyHere?'Remove brace':pos;
+    }
+  });
+  p.style.display='flex';
+  // Position near click, keep on screen
+  const pw=140, ph=160;
+  const left=Math.min(screenX+8, window.innerWidth-pw-10);
+  const top =Math.min(screenY+8, window.innerHeight-ph-10);
+  p.style.left=left+'px'; p.style.top=top+'px';
+}
+
+function closePicker(){
+  document.getElementById('picker').style.display='none';
+  pendingCell=null;
+}
+
+function placeDiag(pos){
+  if(!pendingCell) return;
+  const {r,c}=pendingCell;
+  // Toggle: if already this pos, remove it
+  if(diagCells[r][c]===pos){
+    diagCells[r][c]=null;
+  } else {
+    // Remove existing brace in this cell if any
+    diagCells[r][c]=null;
+    // Place new one (button is only enabled if available)
+    if(cornerAvailable(r,c,pos)) diagCells[r][c]=pos;
+  }
+  closePicker();
+  draw(); updateBOM(); updateSizeInfo();
+}
+
+document.addEventListener('click',e=>{
+  const p=document.getElementById('picker');
+  if(p.style.display!=='none'&&!p.contains(e.target)&&e.target!==canvas) closePicker();
+});
+
+// ─── Interaction ──────────────────────────────────────────────────────────────
+canvas.addEventListener('click',e=>{
+  const rect=canvas.getBoundingClientRect();
+  const mx=(e.clientX-rect.left)*canvas.width/rect.width;
+  const my=(e.clientY-rect.top)*canvas.height/rect.height;
+  const t=nearestTarget(mx,my);
+  if(!t) return;
+
+  if(t.type==='hEdge'){
+    hEdges[t.r][t.c]=hEdges[t.r][t.c]?0:1;
+    // If removing a segment, remove any brace that was using this edge
+    if(!hEdges[t.r][t.c]) removeBracesUsingEdge('h',t.r,t.c);
+  } else if(t.type==='vEdge'){
+    vEdges[t.r][t.c]=vEdges[t.r][t.c]?0:1;
+    if(!vEdges[t.r][t.c]) removeBracesUsingEdge('v',t.r,t.c);
+  } else if(t.type==='cell'){
+    showPicker(e.clientX,e.clientY,t.r,t.c);
+    return;
+  } else if(t.type==='point'){
+    const _n=countAt(t.r,t.c);
+    const _e=edgesAt(t.r,t.c);
+    const _isStraight=_n===2&&((_e.up&&_e.down)||(_e.left&&_e.right));
+    if(_isStraight){
+      // Toggle joint between T_Connector and X_Connector
+      jointOvr[t.r][t.c]=jointOvr[t.r][t.c]==='x'?null:'x';
+    } else if(_n===1){
+      const cur=footOvr[t.r][t.c];
+      footOvr[t.r][t.c]=cur===null?'slim':cur==='slim'?'none':null;
+    }
+  }
+  draw(); updateBOM(); updateSizeInfo();
+});
+
+function removeBracesUsingEdge(axis,er,ec){
+  for(let r=0;r<ROWS;r++) for(let c=0;c<COLS;c++){
+    const pos=diagCells[r][c]; if(!pos) continue;
+    for(const e of braceEdgeDefs(r,c,pos)){
+      if(e.axis===axis&&e.r===er&&e.c===ec){ diagCells[r][c]=null; break; }
+    }
+  }
+}
+
+canvas.addEventListener('mousemove',e=>{
+  const rect=canvas.getBoundingClientRect();
+  const mx=(e.clientX-rect.left)*canvas.width/rect.width;
+  const my=(e.clientY-rect.top)*canvas.height/rect.height;
+  const t=nearestTarget(mx,my);
+  const tt=document.getElementById('tt');
+  if(!t){tt.style.display='none';return;}
+  let text='';
+  if(t.type==='hEdge') text=hEdges[t.r][t.c]?'❌ Remove segment':'➕ Set segment (100mm)';
+  else if(t.type==='vEdge') text=vEdges[t.r][t.c]?'❌ Remove segment':'➕ Set segment (100mm)';
+  else if(t.type==='cell'){
+    const has=diagCells[t.r][t.c];
+    const any=['TL','TR','BL','BR'].some(p=>cornerAvailable(t.r,t.c,p));
+    text=has?'🔄 Change/remove Diagonal_Brace':any?'➕ Set Diagonal_Brace':'⛔ No plate on this cell';
+  } else if(t.type==='point'){
+    const n=countAt(t.r,t.c);
+    if(n===1){const fo=footOvr[t.r][t.c];text=fo===null?'🔄 → Slim_Foot':fo==='slim'?'🔄 → No foot':'🔄 → Stability_Foot';}
+    else if(n>1){
+      const ct=connectorAt(t.r,t.c);
+      const _e2=edgesAt(t.r,t.c);
+      const _straight=n===2&&((_e2.up&&_e2.down)||(_e2.left&&_e2.right));
+      if(_straight) text=ct==='X_Connector'?'🔄 → T_Connector':'🔄 → X_Connector';
+      else if(ct) text=ct;
+    }
+  }
+  if(text){tt.textContent=text;tt.style.display='block';tt.style.left=(e.clientX+14)+'px';tt.style.top=(e.clientY+14)+'px';}
+  else tt.style.display='none';
+});
+canvas.addEventListener('mouseleave',()=>document.getElementById('tt').style.display='none');
+
+// ─── Drawing ──────────────────────────────────────────────────────────────────
+const C_PLATE='#4a9f20',C_SMALL='#2d7a10',C_CON='#378ADD';
+const C_FOOT_ST='#c47a10',C_FOOT_SL='#d4920a',C_BRACE='#c89632';
+
+function draw(){
+  recomputePlateJoints();
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+  // Grid
+  ctx.strokeStyle='rgba(255,255,255,0.04)';ctx.lineWidth=0.5;ctx.setLineDash([]);
+  for(let r=0;r<=ROWS;r++) for(let c=0;c<=COLS;c++) ctx.strokeRect(px(c)-CELL/2,py(r)-CELL/2,CELL,CELL);
+
+  // Empty edge hints
+  ctx.strokeStyle='rgba(255,255,255,0.07)';ctx.lineWidth=2;ctx.setLineDash([3,6]);
+  for(let r=0;r<=ROWS;r++) for(let c=0;c<COLS;c++) if(!hEdges[r][c]){
+    ctx.beginPath();ctx.moveTo(px(c),py(r));ctx.lineTo(px(c+1),py(r));ctx.stroke();
+  }
+  for(let r=0;r<ROWS;r++) for(let c=0;c<=COLS;c++) if(!vEdges[r][c]){
+    ctx.beginPath();ctx.moveTo(px(c),py(r));ctx.lineTo(px(c),py(r+1));ctx.stroke();
+  }
+  ctx.setLineDash([]);
+
+  // Active segments
+  const sc=getSegColors();
+  ctx.lineWidth=8;ctx.lineCap='round';
+  for(let r=0;r<=ROWS;r++) for(let c=0;c<COLS;c++) if(hEdges[r][c]===1){
+    ctx.strokeStyle=sc.h[r][c];
+    ctx.beginPath();ctx.moveTo(px(c),py(r));ctx.lineTo(px(c+1),py(r));ctx.stroke();
+    if(sc.hL[r][c]){ctx.fillStyle='rgba(255,255,255,0.5)';ctx.font='7px -apple-system,sans-serif';ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText(sc.hL[r][c],px(c)+CELL/2,py(r));}
+  }
+  for(let r=0;r<ROWS;r++) for(let c=0;c<=COLS;c++) if(vEdges[r][c]===1){
+    ctx.strokeStyle=sc.v[r][c];
+    ctx.beginPath();ctx.moveTo(px(c),py(r));ctx.lineTo(px(c),py(r+1));ctx.stroke();
+    if(sc.vL[r][c]){ctx.fillStyle='rgba(255,255,255,0.5)';ctx.font='7px -apple-system,sans-serif';ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText(sc.vL[r][c],px(c),py(r)+CELL/2);}
+  }
+
+  // Diagonal braces (drawn on top of plates)
+  for(let r=0;r<ROWS;r++) for(let c=0;c<COLS;c++){
+    const pos=diagCells[r][c]; if(!pos) continue;
+    const x1=px(c),y1=py(r),x2=px(c+1),y2=py(r+1);
+    // Background tint
+    ctx.fillStyle='rgba(200,160,40,0.1)';
+    ctx.fillRect(x1,y1,CELL,CELL);
+    // Diagonal line — from corner outward to opposite corner of the cell
+    const corners={
+      TL:{ax:x1+5,ay:y1+5,bx:x2-5,by:y2-5},
+      TR:{ax:x2-5,ay:y1+5,bx:x1+5,by:y2-5},
+      BL:{ax:x1+5,ay:y2-5,bx:x2-5,by:y1+5},
+      BR:{ax:x2-5,ay:y2-5,bx:x1+5,by:y1+5},
+    }[pos];
+    ctx.strokeStyle=C_BRACE;ctx.lineWidth=3;ctx.lineCap='round';ctx.setLineDash([]);
+    ctx.beginPath();ctx.moveTo(corners.ax,corners.ay);ctx.lineTo(corners.bx,corners.by);ctx.stroke();
+    // Corner dot
+    ctx.fillStyle=C_BRACE;ctx.beginPath();ctx.arc(corners.ax,corners.ay,4,0,Math.PI*2);ctx.fill();
+    // Label
+    ctx.fillStyle='rgba(200,160,40,0.6)';ctx.font='6px -apple-system,sans-serif';ctx.textAlign='center';ctx.textBaseline='middle';
+    ctx.fillText('Diag',px(c)+CELL/2,py(r)+CELL/2);
+  }
+
+  // Connectors / feet
+  for(let r=0;r<=ROWS;r++) for(let c=0;c<=COLS;c++){
+    const n=countAt(r,c);
+    if(n===0){ctx.fillStyle='rgba(255,255,255,0.06)';ctx.beginPath();ctx.arc(px(c),py(r),2,0,Math.PI*2);ctx.fill();}
+    else drawConnector(r,c);
+  }
+}
+
+function getSegColors(){
+  const hC=mkGrid(ROWS+1,COLS,C_SMALL),hL=mkGrid(ROWS+1,COLS,'');
+  const vC=mkGrid(ROWS,COLS+1,C_SMALL),vL=mkGrid(ROWS,COLS+1,'');
+  // Use same pairing logic as calcBOM: pair greedily, boundary = plateJoints
+  for(let r=0;r<=ROWS;r++){
+    let run=[];
+    for(let c=0;c<=COLS;c++){
+      if(c<COLS&&hEdges[r][c]===1){run.push(c);continue;}
+      let i=0;
+      while(i<run.length){
+        if(i+1<run.length&&!plateJoints.has(r+','+(run[i]+1))){
+          // Interior point is NOT a plate boundary → these two form a Plate
+          hC[r][run[i]]=C_PLATE;hC[r][run[i+1]]=C_PLATE;hL[r][run[i]]='Plate';i+=2;
+        } else {
+          hL[r][run[i]]='S';i++;
+        }
+      }
+      run=[];
+    }
+  }
+  for(let c=0;c<=COLS;c++){
+    let run=[];
+    for(let r=0;r<=ROWS;r++){
+      if(r<ROWS&&vEdges[r][c]===1){run.push(r);continue;}
+      let i=0;
+      while(i<run.length){
+        if(i+1<run.length&&!plateJoints.has((run[i]+1)+','+c)){
+          vC[run[i]][c]=C_PLATE;vC[run[i+1]][c]=C_PLATE;vL[run[i]][c]='Plate';i+=2;
+        } else {
+          vL[run[i]][c]='S';i++;
+        }
+      }
+      run=[];
+    }
+  }
+  return{h:hC,hL,v:vC,vL};
+}
+
+function drawConnector(r,c){
+  const type=connectorAt(r,c);if(!type)return;
+  const x=px(c),y=py(r),R=9;
+  if(type==='Stability_Foot'||type==='Slim_Foot'){
+    const fw=type==='Stability_Foot'?14:9,col=type==='Stability_Foot'?C_FOOT_ST:C_FOOT_SL;
+    ctx.fillStyle=col;
+    ctx.beginPath();ctx.roundRect(x-3,y-R,6,R+3,2);ctx.fill();
+    ctx.beginPath();ctx.roundRect(x-fw/2,y+3,fw,5,2);ctx.fill();
+    ctx.fillStyle='rgba(255,255,255,0.75)';ctx.font='6px -apple-system,sans-serif';ctx.textAlign='center';ctx.textBaseline='top';
+    ctx.fillText(type==='Stability_Foot'?'St':'Sl',x,y+10);
+    return;
+  }
+  const lbl={X_Connector:'X',T_Connector:'T',L_Connector:'L'}[type]||'';
+  const col=C_CON;
+  ctx.fillStyle=col;ctx.beginPath();ctx.arc(x,y,R,0,Math.PI*2);ctx.fill();
+  ctx.strokeStyle='rgba(255,255,255,0.25)';ctx.lineWidth=1;ctx.beginPath();ctx.arc(x,y,R,0,Math.PI*2);ctx.stroke();
+  ctx.fillStyle='#fff';ctx.font='bold 7px -apple-system,sans-serif';ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText(lbl,x,y);
+}
+
+// ─── UI ───────────────────────────────────────────────────────────────────────
+const WEIGHTS={'Plate (200mm)':68,'Small_Plate (100mm)':33,'X_Connector':33,'T_Connector':27,'L_Connector':25,'Stability_Foot':23,'Slim_Foot':17,'Diagonal_Brace':14};
+
+function updateBOM(){
+  const b=calcBOM();
+  const rows=[[b.plates,'Plate (200mm)'],[b.smalls,'Small_Plate (100mm)'],[b.xCon,'X_Connector'],[b.tCon,'T_Connector'],[b.lCon,'L_Connector'],[b.stFoot,'Stability_Foot'],[b.slFoot,'Slim_Foot'],[b.diag,'Diagonal_Brace']].filter(([n])=>n>0);
+  if(!rows.length){document.getElementById('bom-content').innerHTML='<span class="empty">No plates set yet.</span>';return;}
+  const totalParts=rows.reduce((s,[n])=>s+n,0);
+  const totalGrams=rows.reduce((s,[n,name])=>s+n*(WEIGHTS[name]||0),0);
+  const weightStr=totalGrams>=1000?`${(totalGrams/1000).toFixed(2)} kg`:`${totalGrams} g`;
+  let html='<table class="bom-tbl"><thead><tr><th>Part</th><th style="text-align:right">Qty</th><th style="text-align:right">Weight</th></tr></thead><tbody>';
+  rows.forEach(([n,name])=>{const w=WEIGHTS[name]||0;html+=`<tr><td>${name}</td><td style="text-align:right;font-weight:600">${n}×</td><td style="text-align:right;color:var(--text2)">${n*w} g</td></tr>`;});
+  html+=`</tbody><tfoot><tr><td class="bom-total">Total parts</td><td class="bom-total" style="text-align:right">${totalParts}×</td><td class="bom-total" style="text-align:right">${weightStr}</td></tr></tfoot></table>`;
+  document.getElementById('bom-content').innerHTML=html;
+}
+
+function updateSizeInfo(){
+  let minC=COLS,minR=ROWS,maxC=0,maxR=0,any=false;
+  for(let r=0;r<=ROWS;r++) for(let c=0;c<COLS;c++) if(hEdges[r][c]){minC=Math.min(minC,c);maxC=Math.max(maxC,c+1);minR=Math.min(minR,r);maxR=Math.max(maxR,r);any=true;}
+  for(let r=0;r<ROWS;r++) for(let c=0;c<=COLS;c++) if(vEdges[r][c]){minC=Math.min(minC,c);maxC=Math.max(maxC,c);minR=Math.min(minR,r);maxR=Math.max(maxR,r+1);any=true;}
+  document.getElementById('sizeinfo').textContent=any?`${(maxC-minC)*100} × ${(maxR-minR)*100} mm`:'';
+}
+
+function clearAll(){
+  hEdges=mkGrid(ROWS+1,COLS,0);vEdges=mkGrid(ROWS,COLS+1,0);
+  diagCells=mkGrid(ROWS,COLS,null);footOvr=mkGrid(ROWS+1,COLS+1,null);jointOvr=mkGrid(ROWS+1,COLS+1,null);
+  draw();updateBOM();updateSizeInfo();
+}
+
+function exportBOM(){
+  const b=calcBOM();
+  const rows=[[b.plates,'Plate (200mm)'],[b.smalls,'Small_Plate (100mm)'],[b.xCon,'X_Connector'],[b.tCon,'T_Connector'],[b.lCon,'L_Connector'],[b.stFoot,'Stability_Foot'],[b.slFoot,'Slim_Foot'],[b.diag,'Diagonal_Brace']].filter(([n])=>n>0);
+  if(!rows.length){alert('No plates set yet.');return;}
+  const totalGrams=rows.reduce((s,[n,name])=>s+n*(WEIGHTS[name]||0),0);
+  const weightStr=totalGrams>=1000?`${(totalGrams/1000).toFixed(2)} kg`:`${totalGrams} g`;
+  const lines=rows.map(([n,name])=>`${n}x ${name} (~${n*(WEIGHTS[name]||0)}g)`);
+  lines.push(`Total: ~${weightStr}`);
+  const text='Modular Shelf Parts List:\n'+lines.join('\n');
+  navigator.clipboard.writeText(text).then(()=>alert('Copied!')).catch(()=>{const ta=document.createElement('textarea');ta.value=text;document.body.appendChild(ta);ta.select();document.execCommand('copy');document.body.removeChild(ta);alert('Copied!');});
+}
+
+draw();
+</script>
+</body>
+</html>
